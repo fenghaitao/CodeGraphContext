@@ -28,8 +28,6 @@ Supported SCIP indexers and their install commands:
 """
 
 import os
-# Fix for protobuf 4.x+ version mismatch with scip-python's generated protos
-os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 import re
 import shutil
 import subprocess
