@@ -25,9 +25,40 @@ from ..tools.graph_builder import GraphBuilder
 from ..tools.package_resolver import get_local_package_path
 from ..utils.debug_log import info_logger, warning_logger
 from ..utils.repo_path import any_repo_matches_path
-from .config_manager import resolve_context, ResolvedContext, register_repo_in_context, ensure_first_run_bootstrap
+from .config_manager import resolve_context, ResolvedContext, register_repo_in_context, ensure_first_run_bootstrap, get_config_value
 
 console = Console()
+
+
+def _print_indexing_method(path: Path) -> None:
+    """Print a one-line banner showing which indexer will be used."""
+    scip_enabled = (get_config_value("SCIP_INDEXER") or "false").lower() == "true"
+    if not scip_enabled:
+        console.print("[dim]Indexing method: Tree-sitter[/dim]")
+        return
+
+    try:
+        from ..tools.scip_indexer import detect_project_lang, ScipIndexer
+        scip_langs_str = get_config_value("SCIP_LANGUAGES") or "python,typescript,go,rust,java"
+        scip_languages = [l.strip() for l in scip_langs_str.split(",") if l.strip()]
+        detected_lang = detect_project_lang(path, scip_languages)
+        if not detected_lang:
+            console.print("[dim]Indexing method: Tree-sitter (no SCIP-supported language detected)[/dim]")
+            return
+
+        binary, _ = ScipIndexer()._get_binary(detected_lang)
+        if binary:
+            console.print(
+                f"[cyan]Indexing method: SCIP[/cyan] "
+                f"[dim](language: {detected_lang}, binary: {binary})[/dim]"
+            )
+        else:
+            console.print(
+                f"[yellow]Indexing method: Tree-sitter "
+                f"(SCIP_INDEXER=true but scip-{detected_lang} binary not found — falling back)[/yellow]"
+            )
+    except Exception:
+        console.print("[dim]Indexing method: SCIP (could not resolve binary path)[/dim]")
 
 
 def _initialize_services(cli_context_flag: Optional[str] = None) -> tuple[Any, Any, Any, ResolvedContext]:
@@ -206,6 +237,7 @@ def index_helper(path: str, context: Optional[str] = None):
         register_repo_in_context(context, str(path_obj), auto_create=True)
 
     console.print(f"Starting indexing for: {path_obj}")
+    _print_indexing_method(path_obj)
 
     try:
         asyncio.run(_run_index_with_progress(graph_builder, path_obj, is_dependency=False, cgcignore_path=ctx.cgcignore_path))
@@ -503,7 +535,8 @@ def reindex_helper(path: str, context: Optional[str] = None):
             return
     
     console.print(f"[cyan]Re-indexing: {path_obj}[/cyan]")
-    
+    _print_indexing_method(path_obj)
+
     try:
         asyncio.run(_run_index_with_progress(graph_builder, path_obj, is_dependency=False, cgcignore_path=ctx.cgcignore_path))
         time_end = time.time()

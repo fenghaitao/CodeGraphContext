@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..utils.debug_log import info_logger, warning_logger, error_logger, debug_log
+from ..cli.config_manager import get_config_value, find_local_env
 
 # ---------------------------------------------------------------------------
 # Language → SCIP indexer mapping
@@ -154,23 +155,33 @@ class ScipIndexer:
     def _get_binary(self, lang: str) -> Tuple[Optional[str], str]:
         for ext, (l, binary, install_hint) in EXTENSION_TO_SCIP.items():
             if l == lang:
-                # Allow an explicit env var override (e.g. SCIP_CLANG_BIN) so
-                # callers can point directly at a binary that isn't on PATH.
-                env_var = f"SCIP_{binary.upper().replace('-', '_')}_BIN"
-                explicit = os.environ.get(env_var)
+                # 1. Explicit config value (SCIP_CLANG_BIN etc.) — set in
+                #    .codegraphcontext/.env or via os.environ.
+                #    binary is e.g. "scip-clang"; strip the "scip-" prefix so
+                #    the key becomes SCIP_CLANG_BIN, not SCIP_SCIP_CLANG_BIN.
+                _bin_suffix = binary[len("scip-"):] if binary.startswith("scip-") else binary
+                config_key = f"SCIP_{_bin_suffix.upper().replace('-', '_')}_BIN"
+                explicit = get_config_value(config_key) or os.environ.get(config_key)
                 if explicit:
                     p = Path(explicit)
+                    # Resolve relative paths against the project directory
+                    # (the folder containing .codegraphcontext/) so that
+                    # SCIP_CLANG_BIN=../../../... works from any CWD.
+                    if not p.is_absolute():
+                        local_env = find_local_env()
+                        if local_env:
+                            p = (local_env.parent.parent / p).resolve()
                     if p.is_file() and os.access(p, os.X_OK):
                         return str(p), install_hint
                     warning_logger(
-                        f"{env_var} is set to '{explicit}' but the file is not executable or does not exist."
+                        f"{config_key} is set to '{explicit}' (resolved: {p}) but the file is not executable or does not exist."
                     )
+                # 2. Standard PATH lookup.
                 found = shutil.which(binary)
                 if found:
                     return found, install_hint
-                # shutil.which() only searches os.environ['PATH'], which may not
-                # include ~/.local/bin (where build_with_llvm18.sh installs).
-                # Fall back to bash 'command -v' which honours the user's shell PATH.
+                # 3. bash 'command -v' — honours ~/.local/bin and other shell
+                #    PATH additions that aren't in os.environ['PATH'].
                 try:
                     result = subprocess.run(
                         ["bash", "-c", f"command -v {binary}"],
