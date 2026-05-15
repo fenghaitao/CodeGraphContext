@@ -46,6 +46,8 @@ class GraphBuilder:
             ".h": "cpp",
             ".hpp": "cpp",
             ".hh": "cpp",
+            ".cc": "cpp",
+            ".cxx": "cpp",
             ".rs": "rust",
             ".c": "c",
             ".java": "java",

@@ -54,6 +54,8 @@ EXTENSION_TO_SCIP: Dict[str, Tuple[str, str, str]] = {
     ".java": ("java",       "scip-java",       "see https://github.com/sourcegraph/scip-java"),
     ".cpp":  ("cpp",        "scip-clang",      "brew install llvm"),
     ".hpp":  ("cpp",        "scip-clang",      "brew install llvm"),
+    ".cc":   ("cpp",        "scip-clang",      "brew install llvm"),
+    ".cxx":  ("cpp",        "scip-clang",      "brew install llvm"),
     ".c":    ("c",          "scip-clang",      "brew install llvm"),
     ".h":    ("cpp",        "scip-clang",      "brew install llvm"),
 }
