@@ -52,12 +52,12 @@ EXTENSION_TO_SCIP: Dict[str, Tuple[str, str, str]] = {
     ".go":   ("go",         "scip-go",         "go install github.com/sourcegraph/scip-go/...@latest"),
     ".rs":   ("rust",       "scip-rust",       "cargo install scip-rust"),
     ".java": ("java",       "scip-java",       "see https://github.com/sourcegraph/scip-java"),
-    ".cpp":  ("cpp",        "scip-clang",      "brew install llvm"),
-    ".hpp":  ("cpp",        "scip-clang",      "brew install llvm"),
-    ".cc":   ("cpp",        "scip-clang",      "brew install llvm"),
-    ".cxx":  ("cpp",        "scip-clang",      "brew install llvm"),
-    ".c":    ("c",          "scip-clang",      "brew install llvm"),
-    ".h":    ("cpp",        "scip-clang",      "brew install llvm"),
+    ".cpp":  ("cpp",        "scip-clang",      "bash code-graph-providers/scip-languages/setup-scip-clang.sh"),
+    ".cc":   ("cpp",        "scip-clang",      "bash code-graph-providers/scip-languages/setup-scip-clang.sh"),
+    ".cxx":  ("cpp",        "scip-clang",      "bash code-graph-providers/scip-languages/setup-scip-clang.sh"),
+    ".hpp":  ("cpp",        "scip-clang",      "bash code-graph-providers/scip-languages/setup-scip-clang.sh"),
+    ".c":    ("c",          "scip-clang",      "bash code-graph-providers/scip-languages/setup-scip-clang.sh"),
+    ".h":    ("cpp",        "scip-clang",      "bash code-graph-providers/scip-languages/setup-scip-clang.sh"),
 }
 
 
@@ -154,8 +154,34 @@ class ScipIndexer:
     def _get_binary(self, lang: str) -> Tuple[Optional[str], str]:
         for ext, (l, binary, install_hint) in EXTENSION_TO_SCIP.items():
             if l == lang:
+                # Allow an explicit env var override (e.g. SCIP_CLANG_BIN) so
+                # callers can point directly at a binary that isn't on PATH.
+                env_var = f"SCIP_{binary.upper().replace('-', '_')}_BIN"
+                explicit = os.environ.get(env_var)
+                if explicit:
+                    p = Path(explicit)
+                    if p.is_file() and os.access(p, os.X_OK):
+                        return str(p), install_hint
+                    warning_logger(
+                        f"{env_var} is set to '{explicit}' but the file is not executable or does not exist."
+                    )
                 found = shutil.which(binary)
-                return found, install_hint
+                if found:
+                    return found, install_hint
+                # shutil.which() only searches os.environ['PATH'], which may not
+                # include ~/.local/bin (where build_with_llvm18.sh installs).
+                # Fall back to bash 'command -v' which honours the user's shell PATH.
+                try:
+                    result = subprocess.run(
+                        ["bash", "-c", f"command -v {binary}"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    bash_found = result.stdout.strip()
+                    if bash_found and Path(bash_found).is_file():
+                        return bash_found, install_hint
+                except Exception:
+                    pass
+                return None, install_hint
         return None, "unknown language"
 
     def _build_command(self, lang: str, binary: str, project_path: Path, output_file: Path) -> Optional[List]:
